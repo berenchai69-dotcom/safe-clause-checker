@@ -56,7 +56,7 @@ function DraftPage() {
     if (item && item.kind === "draft") setOut(item.data as string);
   }, [h]);
 
-  const step = steps[Math.min(i, steps.length - 1)];
+  const step = steps[Math.min(i, steps.length - 1)]!;
   const done = i >= steps.length;
 
   const gen = async (mode: "draft" | "termsheet") => {
@@ -67,7 +67,7 @@ function DraftPage() {
       text = `# ${mode === "draft" ? "Draft Lease Agreement" : "Term Sheet"}\n\n${Object.entries(answers).map(([k, v]) => `- [ ] **${k}**: ${v}`).join("\n")}\n\n_${t("offline")}_`;
     }
     setOut(text);
-    pushHistory({ kind: "draft", title: `${mode} · ${answers.property ?? ""}`, data: text });
+    pushHistory({ kind: "draft", title: `${mode} · ${answers["property"] ?? ""}`, data: text });
     setLoading(false);
   };
 

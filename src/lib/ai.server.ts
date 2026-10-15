@@ -4,7 +4,7 @@ export async function callAI(opts: {
   content: Array<Record<string, unknown>>;
   schema?: { name: string; schema: Record<string, unknown> };
 }): Promise<string> {
-  const key = process.env.LOVABLE_API_KEY;
+  const key = process.env['LOVABLE_API_KEY'];
   if (!key) throw new Error("AI not configured");
   const body: Record<string, unknown> = {
     model: "openai/gpt-6-astra",
@@ -15,7 +15,7 @@ export async function callAI(opts: {
     reasoning: { effort: "low" },
   };
   if (opts.schema) {
-    body.text = {
+    body['text'] = {
       format: { type: "json_schema", name: opts.schema.name, schema: opts.schema.schema, strict: true },
     };
   }

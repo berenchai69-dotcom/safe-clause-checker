@@ -17,7 +17,7 @@ export const Route = createFileRoute("/laws")({
   component: LawsPage,
 });
 
-const RULES = {
+const RULES: Record<"en" | "ar", [string, string][]> = {
   en: [
     ["Security deposit", "Deposits are commonly capped at 1–2 months' rent and must be returned within 30 days minus documented damage."],
     ["Rent increases", "Rent is generally fixed during a lease term. Increases usually require 60–90 days written notice at renewal."],
@@ -51,10 +51,10 @@ const AREAS: Record<string, number> = {
 function LawsPage() {
   const { t, lang } = useI18n();
   const [q, setQ] = useState("");
-  const [area, setArea] = useState(Object.keys(AREAS)[0]);
+  const [area, setArea] = useState(Object.keys(AREAS)[0]!);
   const [beds, setBeds] = useState(2);
   const rules = useMemo(() => RULES[lang].filter(([a, b]) => (a + b).toLowerCase().includes(q.toLowerCase())), [lang, q]);
-  const est = Math.round(AREAS[area] * (0.6 + beds * 0.25));
+  const est = Math.round((AREAS[area] ?? 900) * (0.6 + beds * 0.25));
 
   return (
     <div>
