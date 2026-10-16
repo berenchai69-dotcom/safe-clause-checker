@@ -1,60 +1,73 @@
-// Server-only helper: streams a Responses call through Lovable AI Gateway and returns final text.
+// Server-only helper: Direct free integration with Google Gemini API
 export async function callAI(opts: {
   instructions: string;
   content: Array<Record<string, unknown>>;
   schema?: { name: string; schema: Record<string, unknown> };
 }): Promise<string> {
-  const key = process.env['LOVABLE_API_KEY'];
-  if (!key) throw new Error("AI not configured");
-  const body: Record<string, unknown> = {
-    model: "openai/gpt-6-astra",
-    instructions: opts.instructions,
-    input: [{ role: "user", content: opts.content }],
-    stream: true,
-    store: false,
-    reasoning: { effort: "low" },
-  };
-  if (opts.schema) {
-    body['text'] = {
-      format: { type: "json_schema", name: opts.schema.name, schema: opts.schema.schema, strict: true },
-    };
+  const apiKey = process.env['GEMINI_API_KEY'] || process.env['VITE_GEMINI_API_KEY'] || "AIzaSyDummyKeyForFallback";
+
+  // Process text input
+  let userText = "";
+  for (const c of opts.content) {
+    if (c.type === "input_text" && typeof c.text === "string") {
+      userText += c.text + "\n\n";
+    }
   }
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
+
+  const systemInstruction = opts.instructions;
+  let prompt = `${systemInstruction}\n\nUser Input:\n${userText}`;
+
+  if (opts.schema) {
+    prompt += `\n\nCRITICAL: You MUST respond strictly in raw JSON format matching this JSON schema. Do not wrap in markdown or codeblocks. Output valid JSON only.\nSchema structure: ${JSON.stringify(
+      opts.schema.schema
+    )}`;
+  }
+
+  // Call Gemini REST API
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const body: Record<string, unknown> = {
+    contents: [
+      {
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.2,
+    },
+  };
+
+  if (opts.schema) {
+    (body.generationConfig as Record<string, unknown>)["responseMimeType"] = "application/json";
+  }
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Lovable-API-Key": key,
-      "X-Lovable-AIG-SDK": "fetch",
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok || !res.body) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`AI error ${res.status}: ${t.slice(0, 200)}`);
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Gemini API Error ${res.status}: ${errText.slice(0, 200)}`);
   }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  let out = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const ev = JSON.parse(data);
-        if (ev.type === "response.output_text.delta") out += ev.delta;
-        if (ev.type === "response.failed" || ev.type === "error") throw new Error("AI failed");
-      } catch (e) {
-        if (e instanceof Error && e.message === "AI failed") throw e;
-      }
-    }
+
+  const data = await res.json();
+  const rawOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!rawOutput) {
+    throw new Error("Empty AI response from Gemini");
   }
-  if (!out) throw new Error("Empty AI response");
-  return out;
+
+  // Clean rawOutput if markdown json wrappers exist
+  let cleaned = rawOutput.trim();
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```\s*/, "").replace(/\s*```$/, "");
+  }
+
+  return cleaned;
 }
