@@ -1,13 +1,17 @@
-// Server-only helper: Direct integration supporting AQ. keys via x-goog-api-key header
 export async function callAI(opts: {
   instructions: string;
   content: Array<Record<string, unknown>>;
   schema?: { name: string; schema: Record<string, unknown> };
 }): Promise<string> {
-  const apiKey = process.env['GEMINI_API_KEY'] || process.env['VITE_GEMINI_API_KEY'];
-  if (!apiKey) throw new Error("AI not configured");
+  // فحص المفتاح بكل الطرق الممكنة لبيئة سِيرفر Netlify و Nitro
+  const apiKey = 
+    process.env['GEMINI_API_KEY'] || 
+    process.env['VITE_GEMINI_API_KEY'];
 
-  // Process text input
+  if (!apiKey) {
+    throw new Error("CRITICAL: GEMINI_API_KEY is not set in Netlify environment variables!");
+  }
+
   let userText = "";
   for (const c of opts.content) {
     if (c.type === "input_text" && typeof c.text === "string") {
@@ -24,7 +28,6 @@ export async function callAI(opts: {
     )}`;
   }
 
-  // Official endpoint for Gemini 1.5 Flash
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
 
   const body: Record<string, unknown> = {
@@ -42,7 +45,6 @@ export async function callAI(opts: {
     (body.generationConfig as Record<string, unknown>)["responseMimeType"] = "application/json";
   }
 
-  // Send request with x-goog-api-key header for AQ. keys support
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -54,14 +56,14 @@ export async function callAI(opts: {
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    throw new Error(`Gemini API Error ${res.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`Gemini API Failed [${res.status}]: ${errText}`);
   }
 
   const data = await res.json();
   const rawOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!rawOutput) {
-    throw new Error("Empty AI response from Gemini");
+    throw new Error("Received empty response body from Gemini API");
   }
 
   let cleaned = rawOutput.trim();
