@@ -8,6 +8,8 @@ import { useI18n } from "@/lib/i18n";
 export const Route = createFileRoute("/laws")({
   head: () => ({
     meta: [
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { title: "Local Rental Laws & Rent Estimator — ClauseCheck" },
       { name: "description", content: "Common tenant rights, rental rules, and neighborhood rent benchmarks." },
       { property: "og:title", content: "Rental Laws & Rent Estimator — ClauseCheck" },

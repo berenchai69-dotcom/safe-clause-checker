@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tag, PageHeader } from "@/components/Tag";
 import { useI18n } from "@/lib/i18n";
+import { aiErrorMessage } from "@/lib/ai-error";
 import { compareContracts } from "@/lib/ai.functions";
-import { mockComparison, SAMPLE_CONTRACT, SAMPLE_CONTRACT_NEW } from "@/lib/mock";
+import { SAMPLE_CONTRACT, SAMPLE_CONTRACT_NEW } from "@/lib/mock";
 import { pushHistory, readHistory } from "@/lib/session";
 import type { Comparison } from "@/lib/types";
 
@@ -15,6 +16,8 @@ export const Route = createFileRoute("/compare")({
   validateSearch: z.object({ h: z.string().optional() }),
   head: () => ({
     meta: [
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { title: "Contract Comparison — ClauseCheck" },
       { name: "description", content: "Compare old and new lease versions and spot hidden rent hikes or shifted duties." },
       { property: "og:title", content: "Contract Comparison — ClauseCheck" },
@@ -30,6 +33,7 @@ function ComparePage() {
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [res, setRes] = useState<Comparison | null>(null);
 
   useEffect(() => {
@@ -39,8 +43,10 @@ function ComparePage() {
 
   const run = async () => {
     setLoading(true);
+    setError("");
+    setRes(null);
     let r: Comparison;
-    try { r = await compareContracts({ data: { a, b, lang } }); } catch { r = mockComparison(); }
+    try { r = await compareContracts({ data: { a, b, lang } }); } catch (e) { setError(aiErrorMessage(e, lang)); setLoading(false); return; }
     setRes(r);
     pushHistory({ kind: "compare", title: r.summary.slice(0, 50), data: r });
     setLoading(false);
@@ -63,6 +69,7 @@ function ComparePage() {
           {loading && <Loader2 className="animate-spin" />}{t("compareBtn")}
         </Button>
       </div>
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
       {res && (
         <div className="mt-8 space-y-3">
           {res.offline && <div className="flex items-center gap-2 text-sm text-caution"><WifiOff className="size-4" />{t("offline")}</div>}

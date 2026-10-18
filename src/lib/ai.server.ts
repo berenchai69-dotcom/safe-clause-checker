@@ -1,85 +1,73 @@
+const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+
+type Failure = { status: number; code: string; reason?: string; message: string };
+
+function fail(details: Failure): never {
+  console.error("Gemini request failed", { provider: "gemini", endpoint: GEMINI_ENDPOINT, ...details });
+  throw new Error(`Gemini request failed [${details.status}]: ${details.reason || details.code}`);
+}
+
 export async function callAI(opts: {
+  apiKey: string | undefined;
   instructions: string;
   content: Array<Record<string, unknown>>;
   schema?: { name: string; schema: Record<string, unknown> };
 }): Promise<string> {
-  const apiKey = 
-    process.env['GEMINI_API_KEY'] || 
-    process.env['VITE_GEMINI_API_KEY'];
-
+  const apiKey = opts.apiKey?.trim();
   if (!apiKey) {
-    throw new Error("CRITICAL: GEMINI_API_KEY is not set!");
+    fail({ status: 0, code: "MISSING_API_KEY", message: "GEMINI_API_KEY is not configured." });
   }
 
   let userText = "";
   for (const c of opts.content) {
-    if (c.type === "input_text" && typeof c.text === "string") {
-      userText += c.text + "\n\n";
+    if (c["type"] === "input_text" && typeof c["text"] === "string") {
+      userText += c["text"] + "\n\n";
     }
   }
-
-  const systemInstruction = opts.instructions;
-  let prompt = `${systemInstruction}\n\nUser Input:\n${userText}`;
-
+  let prompt = `${opts.instructions}\n\nUser Input:\n${userText}`;
   if (opts.schema) {
-    prompt += `\n\nCRITICAL: You MUST respond strictly in raw JSON format matching this JSON schema. Do not wrap in markdown or codeblocks. Output valid JSON only.\nSchema structure: ${JSON.stringify(
-      opts.schema.schema
-    )}`;
+    prompt += `\n\nRespond strictly in raw JSON matching this schema, without markdown or codeblocks:\n${JSON.stringify(opts.schema.schema)}`;
   }
+  const generationConfig: Record<string, unknown> = { temperature: 0.2 };
+  if (opts.schema) generationConfig["responseMimeType"] = "application/json";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey.startsWith("AQ.")) headers["Authorization"] = `Bearer ${apiKey}`;
+  else headers["x-goog-api-key"] = apiKey;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
-
-  const body: Record<string, unknown> = {
-    contents: [
-      {
-        parts: [{ text: prompt }],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.2,
-    },
-  };
-
-  if (opts.schema) {
-    (body.generationConfig as Record<string, unknown>)["responseMimeType"] = "application/json";
+  let res: Response;
+  try {
+    res = await fetch(GEMINI_ENDPOINT, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+    });
+  } catch {
+    fail({ status: 0, code: "NETWORK_ERROR", message: "Could not reach Gemini." });
   }
-
-  // إرسال الهيدرات المتوافقة مع مفاتيح AQ. ومفاتيح AIzaSy معاً
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (apiKey.startsWith("AQ.")) {
-    // مفاتيح AQ تتطلب Bearer Authorization
-    headers["Authorization"] = `Bearer ${apiKey}`;
-  } else {
-    headers["x-goog-api-key"] = apiKey;
-  }
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
   if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Gemini API Failed [${res.status}]: ${errText}`);
+    // Only log structured provider fields, never request headers or contract content.
+    const payload = await res.json().catch(() => null) as {
+      error?: { status?: string; message?: string; details?: Array<{ reason?: string }> };
+    } | null;
+    const sanitize = (value: string) => value.split(apiKey).join("[REDACTED]").replace(/(?:AQ\.|AIza)[A-Za-z0-9_.-]+/g, "[REDACTED]").slice(0, 1000);
+    fail({
+      status: res.status,
+      code: sanitize(payload?.error?.status || "HTTP_ERROR"),
+      reason: sanitize(payload?.error?.details?.find((detail) => typeof detail.reason === "string")?.reason || ""),
+      message: sanitize(payload?.error?.message || "Gemini rejected the request."),
+    });
   }
-
-  const data = await res.json();
-  const rawOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!rawOutput) {
-    throw new Error("Received empty response body from Gemini API");
+  let data: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  try { data = await res.json(); }
+  catch { fail({ status: res.status, code: "INVALID_RESPONSE", message: "Gemini returned invalid JSON." }); }
+  const rawOutput = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("");
+  if (!rawOutput?.trim()) {
+    fail({ status: res.status, code: "EMPTY_RESPONSE", message: "Gemini returned no text." });
   }
-
-  let cleaned = rawOutput.trim();
-  if (cleaned.startsWith("```json")) {
-    cleaned = cleaned.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-  } else if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```\s*/, "").replace(/\s*```$/, "");
+  const cleaned = rawOutput.trim().replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+  if (opts.schema) {
+    try { JSON.parse(cleaned); }
+    catch { fail({ status: res.status, code: "INVALID_JSON", message: "Gemini returned invalid structured output." }); }
   }
-
   return cleaned;
 }
