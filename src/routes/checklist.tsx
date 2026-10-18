@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/Tag";
 import { useI18n } from "@/lib/i18n";
+import { aiErrorMessage } from "@/lib/ai-error";
 import { generateChecklist } from "@/lib/ai.functions";
 import { MOCK_CHECKLIST, SAMPLE_CONTRACT } from "@/lib/mock";
 import { pushHistory, readHistory } from "@/lib/session";
@@ -16,6 +17,8 @@ export const Route = createFileRoute("/checklist")({
   validateSearch: z.object({ h: z.string().optional() }),
   head: () => ({
     meta: [
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { title: "Move-in Inspection Checklist — ClauseCheck" },
       { name: "description", content: "Generate a move-in inspection checklist from your contract and document property condition." },
       { property: "og:title", content: "Move-in Checklist — ClauseCheck" },
@@ -33,6 +36,7 @@ function ChecklistPage() {
   const [text, setText] = useState("");
   const [groups, setGroups] = useState<Groups | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [state, setState] = useState<Record<string, { ok?: boolean; note?: string; photo?: string }>>({});
 
   useEffect(() => {
@@ -42,8 +46,10 @@ function ChecklistPage() {
 
   const gen = async () => {
     setLoading(true);
+    setError("");
+    setGroups(null);
     let g: Groups;
-    try { g = (await generateChecklist({ data: { text, lang } })).groups; } catch { g = MOCK_CHECKLIST.groups; }
+    try { g = (await generateChecklist({ data: { text, lang } })).groups; } catch (e) { setError(aiErrorMessage(e, lang)); setLoading(false); return; }
     setGroups(g);
     pushHistory({ kind: "checklist", title: `${g.length} sections`, data: g });
     setLoading(false);
@@ -64,6 +70,7 @@ function ChecklistPage() {
           </div>
         </div>
       </div>
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
       {groups && (
         <div className="mt-8 space-y-4">
           <Button variant="outline" className="no-print" onClick={() => window.print()}><Printer />{t("print")}</Button>

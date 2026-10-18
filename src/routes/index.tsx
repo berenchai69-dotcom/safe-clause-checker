@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tag, PageHeader } from "@/components/Tag";
 import { useI18n } from "@/lib/i18n";
+import { aiErrorMessage } from "@/lib/ai-error";
 import { analyzeContract, chatContract } from "@/lib/ai.functions";
-import { mockAnalysis, SAMPLE_CONTRACT } from "@/lib/mock";
+import { SAMPLE_CONTRACT } from "@/lib/mock";
 import { pushHistory, readHistory, fileToDataUrl } from "@/lib/session";
 import type { Analysis } from "@/lib/types";
 
@@ -16,6 +17,8 @@ export const Route = createFileRoute("/")({
   validateSearch: z.object({ sample: z.number().optional(), h: z.string().optional() }),
   head: () => ({
     meta: [
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { title: "Contract Analyzer — ClauseCheck" },
       { name: "description", content: "Paste or scan a lease and get clause-by-clause risk tags, questions to ask, and an AI legal assistant." },
       { property: "og:title", content: "Contract Analyzer — ClauseCheck" },
@@ -35,11 +38,13 @@ function Analyzer() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Analysis | null>(null);
   const [source, setSource] = useState("");
+  const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const run = async (contract: string, f: File | null) => {
     setLoading(true);
     setResult(null);
+    setError("");
     let r: Analysis;
     try {
       r = await analyzeContract({
@@ -50,8 +55,9 @@ function Analyzer() {
         },
       });
     } catch (e) {
-      console.error(e);
-      r = mockAnalysis();
+      setError(aiErrorMessage(e, lang));
+      setLoading(false);
+      return;
     }
     const src = contract || `[${f?.name}]`;
     setResult(r);
@@ -118,6 +124,7 @@ function Analyzer() {
         </div>
       </div>
 
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
       {loading && (
         <div className="mt-8 space-y-3">
           {[0, 1, 2].map((i) => <div key={i} className="panel h-20 animate-pulse" />)}
@@ -193,6 +200,7 @@ function Chat({ context, offline }: { context: string; offline: boolean }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const send = async () => {
@@ -202,20 +210,14 @@ function Chat({ context, offline }: { context: string; offline: boolean }) {
     setMsgs(next);
     setInput("");
     setBusy(true);
+    setError("");
     try {
       const r = await chatContract({ data: { context, messages: next, lang } });
       setMsgs([...next, { role: "assistant", content: r.text }]);
-    } catch {
-      setMsgs([
-        ...next,
-        {
-          role: "assistant",
-          content:
-            lang === "ar"
-              ? "المساعد غير متاح حالياً. نصيحة عامة: اطلب توضيحاً كتابياً لأي بند أصفر أو أحمر قبل التوقيع."
-              : "The assistant is offline right now. General tip: ask for written clarification of every yellow or red clause before signing.",
-        },
-      ]);
+    } catch (e) {
+      setError(aiErrorMessage(e, lang));
+      setMsgs(msgs);
+      setInput(q);
     }
     setBusy(false);
     inputRef.current?.focus();
@@ -237,6 +239,7 @@ function Chat({ context, offline }: { context: string; offline: boolean }) {
         )}
         {busy && <Loader2 className="size-4 animate-spin text-primary" />}
       </div>
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
       <div className="mt-4 flex items-end gap-2">
         <Textarea
           ref={inputRef}

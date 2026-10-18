@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/Tag";
 import { useI18n } from "@/lib/i18n";
+import { aiErrorMessage } from "@/lib/ai-error";
 import { draftAgreement } from "@/lib/ai.functions";
 import { pushHistory, readHistory } from "@/lib/session";
 
@@ -14,6 +15,8 @@ export const Route = createFileRoute("/draft")({
   validateSearch: z.object({ h: z.string().optional() }),
   head: () => ({
     meta: [
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { title: "Smart Draft & Term Sheet Builder — ClauseCheck" },
       { name: "description", content: "Answer a few simple questions and get a balanced lease draft or negotiation term sheet." },
       { property: "og:title", content: "Smart Draft Builder — ClauseCheck" },
@@ -50,22 +53,24 @@ function DraftPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [out, setOut] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const item = h && readHistory().find((x) => x.id === h);
     if (item && item.kind === "draft") setOut(item.data as string);
   }, [h]);
 
-  const step = steps[Math.min(i, steps.length - 1)]!;
+  const step = steps[Math.min(i, steps.length - 1)];
+  if (!step) return null;
   const done = i >= steps.length;
 
   const gen = async (mode: "draft" | "termsheet") => {
     setLoading(true);
+    setError("");
+    setOut("");
     let text: string;
     try { text = (await draftAgreement({ data: { answers, mode, lang } })).text; }
-    catch {
-      text = `# ${mode === "draft" ? "Draft Lease Agreement" : "Term Sheet"}\n\n${Object.entries(answers).map(([k, v]) => `- [ ] **${k}**: ${v}`).join("\n")}\n\n_${t("offline")}_`;
-    }
+    catch (e) { setError(aiErrorMessage(e, lang)); setLoading(false); return; }
     setOut(text);
     pushHistory({ kind: "draft", title: `${mode} · ${answers["property"] ?? ""}`, data: text });
     setLoading(false);
@@ -107,6 +112,7 @@ function DraftPage() {
           </div>
         </div>
       </div>
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
       {out && (
         <div className="panel mt-8 p-8">
           <Button variant="outline" className="no-print float-end" onClick={() => window.print()}><Printer />{t("print")}</Button>
