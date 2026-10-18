@@ -3,13 +3,12 @@ export async function callAI(opts: {
   content: Array<Record<string, unknown>>;
   schema?: { name: string; schema: Record<string, unknown> };
 }): Promise<string> {
-  // فحص المفتاح بكل الطرق الممكنة لبيئة سِيرفر Netlify و Nitro
   const apiKey = 
     process.env['GEMINI_API_KEY'] || 
     process.env['VITE_GEMINI_API_KEY'];
 
   if (!apiKey) {
-    throw new Error("CRITICAL: GEMINI_API_KEY is not set in Netlify environment variables!");
+    throw new Error("CRITICAL: GEMINI_API_KEY is not set!");
   }
 
   let userText = "";
@@ -45,12 +44,21 @@ export async function callAI(opts: {
     (body.generationConfig as Record<string, unknown>)["responseMimeType"] = "application/json";
   }
 
+  // إرسال الهيدرات المتوافقة مع مفاتيح AQ. ومفاتيح AIzaSy معاً
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (apiKey.startsWith("AQ.")) {
+    // مفاتيح AQ تتطلب Bearer Authorization
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  } else {
+    headers["x-goog-api-key"] = apiKey;
+  }
+
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
