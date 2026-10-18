@@ -53,9 +53,7 @@ export async function callAI(opts: {
     fail({
       status: res.status,
       code: sanitize(payload?.error?.status || "HTTP_ERROR"),
-      reason: payload?.error?.details?.find((detail) => typeof detail.reason === "string")?.reason
-        ? sanitize(payload.error.details.find((detail) => typeof detail.reason === "string")?.reason || "")
-        : undefined,
+      reason: sanitize(payload?.error?.details?.find((detail) => typeof detail.reason === "string")?.reason || ""),
       message: sanitize(payload?.error?.message || "Gemini rejected the request."),
     });
   }
